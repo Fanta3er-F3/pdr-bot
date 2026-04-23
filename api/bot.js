@@ -1,9 +1,8 @@
 const { Telegraf } = require('telegraf');
 
-// Беремо ключі доступу з налаштувань Vercel
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const ADMIN_ID = process.env.ADMIN_ID; // Ваш ID в Телеграмі
-const CHANNEL_ID = process.env.CHANNEL_ID; // ID вашого каналу (наприклад, @my_pdr_channel)
+const ADMIN_ID = process.env.ADMIN_ID; 
+const CHANNEL_ID = process.env.CHANNEL_ID; 
 
 // Команда /start
 bot.start((ctx) => {
@@ -12,21 +11,20 @@ bot.start((ctx) => {
 
 // Обробка вхідних фотографій від користувачів
 bot.on('photo', async (ctx) => {
-  // Беремо фото найкращої якості (останнє в масиві)
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
   const userId = ctx.message.from.id;
 
   // Відповідаємо користувачу
   await ctx.reply('📸 Фото отримано! Передано на перевірку модератору.');
 
-  // Відправляємо фото вам в адмінку з кнопками
+  // Відправляємо фото в адмінку (тепер у кнопках ховаємо ТІЛЬКИ ID юзера, щоб не перевищити ліміт)
   await ctx.telegram.sendPhoto(ADMIN_ID, fileId, {
     caption: `🚨 Нове порушення!\nВід користувача з ID: ${userId}\nЩо робимо з цим фото?`,
     reply_markup: {
       inline_keyboard: [
         [
-          { text: '✅ Опублікувати', callback_data: `pub_${fileId}_${userId}` },
-          { text: '❌ Відхилити', callback_data: `rej_${fileId}_${userId}` }
+          { text: '✅ Опублікувати', callback_data: `pub_${userId}` },
+          { text: '❌ Відхилити', callback_data: `rej_${userId}` }
         ]
       ]
     }
@@ -34,9 +32,12 @@ bot.on('photo', async (ctx) => {
 });
 
 // Якщо модератор натиснув "Опублікувати"
-bot.action(/pub_(.+)_(.+)/, async (ctx) => {
-  const fileId = ctx.match[1];
-  const userId = ctx.match[2];
+bot.action(/pub_(.+)/, async (ctx) => {
+  const userId = ctx.match[1];
+  
+  // Беремо ID фотографії прямо з повідомлення, під яким натиснута кнопка
+  const photoArray = ctx.callbackQuery.message.photo;
+  const fileId = photoArray[photoArray.length - 1].file_id;
   
   try {
     // 1. Відправляємо в основний канал
@@ -44,7 +45,7 @@ bot.action(/pub_(.+)_(.+)/, async (ctx) => {
       caption: `🚗 Зафіксовано нове порушення!\n📍 Надіслав: анонімний спостерігач.`
     });
     
-    // 2. Сповіщаємо юзера і "даємо бали" (поки просто текстом)
+    // 2. Сповіщаємо юзера
     await ctx.telegram.sendMessage(userId, '🎉 Ваше фото схвалено та опубліковано! +10 балів до вашого рангу.');
     
     // 3. Змінюємо повідомлення в адмінці, щоб кнопки зникли
@@ -56,8 +57,8 @@ bot.action(/pub_(.+)_(.+)/, async (ctx) => {
 });
 
 // Якщо модератор натиснув "Відхилити"
-bot.action(/rej_(.+)_(.+)/, async (ctx) => {
-  const userId = ctx.match[2];
+bot.action(/rej_(.+)/, async (ctx) => {
+  const userId = ctx.match[1];
   
   // Сповіщаємо юзера
   await ctx.telegram.sendMessage(userId, '❌ На жаль, модератор відхилив ваше фото (не видно номерів або немає порушення).');
@@ -66,13 +67,10 @@ bot.action(/rej_(.+)_(.+)/, async (ctx) => {
   await ctx.editMessageCaption('❌ Відхилено модератором.');
 });
 
-// Обов'язкова частина для роботи на Vercel (Webhooks)
 module.exports = async (req, res) => {
   try {
-    // Передаємо вхідний запит від Telegram у нашого бота
     await bot.handleUpdate(req.body);
   } finally {
-    // Завжди відповідаємо статус 200, щоб Telegram не дублював повідомлення
     res.status(200).send('OK');
   }
 };
