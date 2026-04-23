@@ -1,1 +1,9 @@
-
+{
+  "name": "pdr-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for PDR violations",
+  "main": "api/bot.js",
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}
