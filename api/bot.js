@@ -18,7 +18,7 @@ const userState = {};
 const getMainMenu = () => {
   return Markup.keyboard([
     ['🚨 Повідомити про порушення'],
-    [Markup.button.webApp('🏆 Дошка рейтингу', 'https://uk.wikipedia.org/wiki/Головна_сторінка')]
+    [Markup.button.webApp('🏆 Дошка рейтингу', 'https://mycarpet.kesug.com/bot/index.php')]
   ]).resize();
 };
 
