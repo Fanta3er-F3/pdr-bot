@@ -13,42 +13,51 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const getMainMenu = () => {
   return Markup.keyboard([
     ['🚨 Повідомити про порушення'],
-    [Markup.button.webApp('🏆 Дошка рейтингу', 'https://uk.wikipedia.org/wiki/Головна_сторінка')]
+    // Ось ваша нова лінка на дашборд
+    [Markup.button.webApp('🏆 Дошка рейтингу', 'https://mycarpet.kesug.com/bot/index.php')]
   ]).resize();
 };
 
 bot.on('message', async (ctx) => {
   const userId = ctx.from.id;
+  const text = ctx.message?.text;
 
   // 1. Отримуємо профіль з бази
   let { data: profile } = await supabase.from('profiles').select('*').eq('user_id', userId).single();
 
   // 2. Якщо користувач натиснув /start
-  if (ctx.message?.text === '/start') {
+  if (text === '/start') {
     await supabase.from('profiles').upsert({ user_id: userId, step: 'waiting_for_nickname', points: profile?.points || 0 });
-    return ctx.reply('👋 <b>Вітаємо в системі фіксації ПДР!</b>\n\nВведи свій <b>Нікнейм</b> текстом:', { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard() });
+    return ctx.reply('👋 <b>Вітаємо в системі фіксації ПДР!</b>\n\nВведи свій <b>Нікнейм</b> (напиши текстом з клавіатури):', { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard() });
   }
 
-  // Якщо користувача взагалі немає в базі, але він щось пише
+  // Якщо користувача взагалі немає в базі, створюємо пустий запис
   if (!profile) {
     await supabase.from('profiles').upsert({ user_id: userId, step: 'waiting_for_nickname', points: 0 });
-    profile = { step: 'waiting_for_nickname' }; // штучно задаємо крок
+    profile = { step: 'waiting_for_nickname', nickname: null }; 
+  }
+
+  // 3. ЖОРСТКЕ ПЕРЕХОПЛЕННЯ КНОПКИ (Виправлення багу)
+  if (text === '🚨 Повідомити про порушення') {
+    // Якщо юзер тисне кнопку, але ще не ввів нікнейм
+    if (profile.step === 'waiting_for_nickname' || !profile.nickname) {
+      return ctx.reply('❗️ Кнопка зараз не працює. Спочатку придумай і НАПИШИ свій нікнейм текстом:');
+    }
+    
+    // Якщо нік є, запускаємо збір медіа
+    await supabase.from('profiles').update({ step: 'waiting_for_media' }).eq('user_id', userId);
+    return ctx.reply('📸 <b>Крок 1/3: Фото чи Відео</b>\nНадішли докази порушення (бажано, щоб було видно номер):', { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard() });
   }
 
   const step = profile.step;
 
-  // 3. Крок реєстрації: Чекаємо нікнейм
+  // 4. Крок реєстрації: Чекаємо нікнейм
   if (step === 'waiting_for_nickname') {
-    if (!ctx.message.text) return ctx.reply('❗️ Будь ласка, введи нікнейм текстом.');
+    if (!text) return ctx.reply('❗️ Будь ласка, введи нікнейм текстом.');
     
-    await supabase.from('profiles').update({ nickname: ctx.message.text, step: 'idle' }).eq('user_id', userId);
-    return ctx.reply(`✅ Радий познайомитись, <b>${ctx.message.text}</b>!\nТисни кнопку нижче, щоб почати.`, { parse_mode: 'HTML', ...getMainMenu() });
-  }
-
-  // 4. Якщо користувач тисне кнопку "Повідомити"
-  if (ctx.message?.text === '🚨 Повідомити про порушення') {
-    await supabase.from('profiles').update({ step: 'waiting_for_media' }).eq('user_id', userId);
-    return ctx.reply('📸 <b>Крок 1/3: Фото чи Відео</b>\nНадішли докази порушення (бажано, щоб було видно номер):', { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard() });
+    // Зберігаємо справжній нікнейм
+    await supabase.from('profiles').update({ nickname: text, step: 'idle' }).eq('user_id', userId);
+    return ctx.reply(`✅ Радий познайомитись, <b>${text}</b>!\nТисни кнопку нижче, щоб почати.`, { parse_mode: 'HTML', ...getMainMenu() });
   }
 
   // 5. Крок 1: Збір медіа
@@ -70,15 +79,15 @@ bot.on('message', async (ctx) => {
 
   // 6. Крок 2: Збір номера
   if (step === 'waiting_for_plate') {
-    if (!ctx.message.text) return ctx.reply('❗️ Будь ласка, введи номер текстом.');
+    if (!text) return ctx.reply('❗️ Будь ласка, введи номер текстом.');
     
-    await supabase.from('profiles').update({ step: 'waiting_for_location', temp_plate: ctx.message.text.toUpperCase() }).eq('user_id', userId);
+    await supabase.from('profiles').update({ step: 'waiting_for_location', temp_plate: text.toUpperCase() }).eq('user_id', userId);
     return ctx.reply('📍 <b>Крок 3/3: Місце</b>\nНапиши адресу текстом або надішли геолокацію з телефону:', { parse_mode: 'HTML' });
   }
 
   // 7. Крок 3: Збір локації та відправка адміну
   if (step === 'waiting_for_location') {
-    const location = ctx.message.location ? `Геоточка: ${ctx.message.location.latitude}, ${ctx.message.location.longitude}` : ctx.message.text;
+    const location = ctx.message.location ? `Геоточка: ${ctx.message.location.latitude}, ${ctx.message.location.longitude}` : text;
 
     const caption = `🚨 <b>НОВЕ ПОРУШЕННЯ</b>\n\n` +
                     `👤 <b>Від:</b> ${profile.nickname}\n` +
